@@ -2,7 +2,7 @@
 
 ### Intro
 A basic semantic search app based on 133.952 public pdfs (~2TB) from [CORDIS](https://cordis.europa.eu/search/en) chunked and indexed (mean embedding of all chunks) in a ~38MB gzipped json with [all-MiniLM-L6-v2](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
-App loads ~50Mb of resources of data and scripts.
+App loads ~50Mb of resources of data and scripts. Data cutoff in 2022.
 
 ### Architecture 
 The app loads a gzipped json with a filename referring to the downloaded pdf files from CORDIS and the vectors consisting of 384 dimensions: 
