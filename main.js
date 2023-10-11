@@ -4,6 +4,8 @@ const dbVersion = 1;
 let db;
 let pipe;
 let currentQueryEmbedding
+let cordis
+let rcn_title_teaser
 
 // Open or create an IndexedDB database
 const openDBRequest = indexedDB.open(dbName, dbVersion);
@@ -14,6 +16,7 @@ openDBRequest.onsuccess = function (event) {
 
     loadAndExtractJSON(jsonGzUrl, (jsonObject) => {
         cordis = jsonObject;
+        fetchUnzip("rcn_title_teaser.json.gz");
         console.log("successfully loaded");
         activateSubmitButton();
     });
@@ -30,6 +33,35 @@ openDBRequest.onupgradeneeded = function (event) {
         const objectStore = database.createObjectStore('cordisStore', { keyPath: 'id' });
     }
 };
+
+function fetchUnzip(){
+    fetch(url)
+                .then((response) => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.arrayBuffer(); // Get the response as an ArrayBuffer
+                })
+                .then((gzippedData) => {
+                    // Decompress the gzipped data using pako
+                    console.log("gzipped file loaded, start decompression");
+                    const jsonString = pako.inflate(new Uint8Array(gzippedData), { to: 'string' });
+
+                    // Parse the JSON string into an object
+                    const jsonObject = JSON.parse(jsonString);
+
+                    // Cache the unzipped JSON data in IndexedDB
+                    const transaction = db.transaction(['cordisStore'], 'readwrite');
+                    const objectStore = transaction.objectStore('cordisStore');
+                    objectStore.put({ id: 'cachedCordisJSON', data: jsonObject });
+
+                    // Callback with the extracted JSON object
+                    callback(jsonObject);
+                })
+                .catch((error) => {
+                    console.error('Error loading or extracting JSON.gz:', error);
+                });
+}
 
 // Function to load and extract JSON
 function loadAndExtractJSON(url, callback) {
@@ -84,22 +116,33 @@ function loadAndExtractJSON(url, callback) {
     };
 }
 
-////////////////////////////////////////////////////
-// Example usage for loading uncompressed json
-//loadJSON('filename_mean_embedding_prec_2_records.json')
-// .then(jsonData => {
-//   cordis = jsonData
-//});
+function fetchUnzip(url){
+    fetch(url=url)
+        .then((response) => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.arrayBuffer(); // Get the response as an ArrayBuffer
+        })
+        .then((gzippedData) => {
+            // Decompress the gzipped data using pako
+            console.log("rcn info file loaded, start decompression");
+            const jsonString = pako.inflate(new Uint8Array(gzippedData), { to: 'string' });
 
-const loadJSON = async (url) => {
-    try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`Network response was not ok: ${response.status}`);
-        return await response.json();
-    } catch (error) {
-        console.error('There was a problem fetching the JSON data:', error);
-    }
-};
+            // Parse the JSON string into an object
+            const jsonObject = JSON.parse(jsonString);
+
+            // Callback with the extracted JSON object
+            console.log("rcn info file decompressed");
+            rcn_title_teaser = jsonObject
+            return jsonObject;
+        })
+        .catch((error) => {
+            console.error('Error loading or extracting JSON.gz:', error);
+        });
+}
+
+////////////////////////////////////////////////////
 
 function downloadPage() {
     var url = window.location.href;
@@ -139,6 +182,9 @@ async function sendRequest() {
         table.deleteRow(0);
     }
 
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
     let checkbox = document.getElementById("earth-observation-checkbox");
 
     // Get the input text value
@@ -161,7 +207,7 @@ async function sendRequest() {
 
         // Create table header
         const headerRow = table.insertRow(0);
-        const headerCells = ["No", "Type", "RCN", "ID", "Cordis Link", "Document Weblink", "Score"];
+        const headerCells = ["No", "Type", "RCN", "RCN Title", "RCN Teaser", "ID", "Cordis Link", "Document Weblink", "Score"];
 
         for (let i = 0; i < headerCells.length; i++) {
             const cell = document.createElement("th"); // Use <th> for table headers
@@ -194,7 +240,7 @@ async function sendRequest() {
                 weblink = "Type not recognized";
             }
 
-            const score = entry.similarity.toFixed(2);
+            const score = entry.similarity.toFixed(3);
 
             // Create Cordis Link based on document type
             let cordisLink = "";
@@ -209,8 +255,13 @@ async function sendRequest() {
                 cordisLink = `https://cordis.europa.eu/programme/${rcn}`;
             }
 
+            const this_rcn_title_teaser = rcn_title_teaser[parseInt(rcn)] || {};
+
+            let rcn_title = this_rcn_title_teaser.Title || "";
+            let rcn_teaser = this_rcn_title_teaser.Teaser || "";
+
             // Insert data into table cells
-            const cells = [i + 1, type, rcn, id, cordisLink, weblink, score];
+            const cells = [i + 1, type, rcn,rcn_title,rcn_teaser, id, cordisLink, weblink, score];
             for (let j = 0; j < cells.length; j++) {
                 const cell = row.insertCell(j);
                 cell.textContent = cells[j];
@@ -246,14 +297,24 @@ async function sendRequest() {
     }
 }
 
+const logTimestamp = () => {
+    const timestamp = new Date().toISOString().slice(0, 19).replace('T', ' ') + '.' + String(new Date().getMilliseconds()).padStart(3, '0');
+    console.log(timestamp);
+  };
+  
+let currentQueryEmbeddingMagnitude
+
+// Calculate cosine similarity between two vectors
+function cosineSimilarity(vectorA, vectorB) {
+    const dotProduct = vectorA.reduce((acc, val, i) => acc + val * vectorB[i], 0);
+    const magnitudeB = Math.sqrt(vectorB.reduce((acc, val) => acc + val ** 2, 0));
+    return dotProduct / (currentQueryEmbeddingMagnitude * magnitudeB);
+}
+  
 function calculateSimilarity(currentQueryEmbedding, jsonData) {
-    // Calculate cosine similarity between two vectors
-    function cosineSimilarity(vectorA, vectorB) {
-        const dotProduct = vectorA.reduce((acc, val, i) => acc + val * vectorB[i], 0);
-        const magnitudeA = Math.sqrt(vectorA.reduce((acc, val) => acc + val ** 2, 0));
-        const magnitudeB = Math.sqrt(vectorB.reduce((acc, val) => acc + val ** 2, 0));
-        return dotProduct / (magnitudeA * magnitudeB);
-    }
+    logTimestamp()
+
+    currentQueryEmbeddingMagnitude = Math.sqrt(currentQueryEmbedding.reduce((acc, val) => acc + val ** 2, 0));
 
     // Calculate similarity scores for each entry in jsonData
     const similarityScores = jsonData.map(entry => ({
@@ -261,13 +322,16 @@ function calculateSimilarity(currentQueryEmbedding, jsonData) {
         similarity: cosineSimilarity(currentQueryEmbedding, entry.mean_embedding),
     }));
 
+    logTimestamp()
+
     // Sort the entries by similarity in descending order
     similarityScores.sort((a, b) => b.similarity - a.similarity);
+
+    logTimestamp()
 
     // Return the top N entries
     const numResultsInput = document.getElementById("num-results").value;
     const numResults = parseInt(numResultsInput);
-
     const topResults = similarityScores.slice(0, numResults);
 
     // Log the top N entries to the console
