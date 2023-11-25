@@ -32,3 +32,7 @@ import pandas as pd
 df = pd.read_json("filename_mean_embedding_prec_2_records.json.gz")
 df
 ```
+
+### Future ideas 
+- Use better embeddings models from MTEB leaderboard like bge-base
+- Use parquet instead of gzipped json, might boost read times
